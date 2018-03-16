@@ -1,8 +1,8 @@
 
 
-f = open('fiiles','r')
-main=f.readline()
-f.close()
+#f = open('files','r')
+#main=f.readline()
+#f.close()
 
 class MiClase:
     """Simple clase de ejemplo"""
