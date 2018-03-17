@@ -24,8 +24,8 @@ _WRITE_DS3231=const(0x00)
 _REG_CONTROL=const(0x0E)
 _REG_STATUS=const(0x0F)
 
-_REG_TEMP_LSB=const(0x11)
-_REG_TEMP_MSB=const(0x12)
+_REG_TEMP_MSB=const(0x11)
+_REG_TEMP_LSB=const(0x12)
 
 
 
@@ -100,6 +100,34 @@ def temperature_DS3231():
     print('temperature_DS3231:',bin(ord(TEM1)),bin(ord(TEM2)))
 
     i2c.deinit()
+'''
+#dato=00011001---01000000
+dato=0x19
+dato2=0x40
+dato=chr(dato)
+dato2=chr(dato2)
+dato=hex(ord(dato))
+dato=int(dato,0)
+
+dato2=hex(ord(dato2))
+dato2=int(dato2,0)
+
+msb=bin(dato << 2)
+lsb=bin(dato2 >> 6)
+
+#print(dato,bin(dato << 2),bin(dato2>>6))
+print(msb,lsb)
+
+tempe=int(msb,2) | int(lsb,2)
+
+print('tempe',tempe*0.25)
+
+print('hello')
+print(bin(int(msb,2)) or bin(int(lsb,2)))
+print(100 or 1)
+print(101*.25)
+'''
+
 
 def sinc_RTC_ds1307():
     i2c.init()
