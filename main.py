@@ -1,7 +1,15 @@
 import pycom
 import time
+from network import WLAN
 from machine import I2C, RTC
+import pycom
+import socket
+import sys
+
+pycom.heartbeat(False)
 #from multimain import MiClase
+host=''
+port=80
 
 '''
 pycom.heartbeat(False)
@@ -71,63 +79,31 @@ def code_ds1307(valor_ds1307):
 
 def obtener_ds1307():
     i2c.init()
-    #data = ustruct.pack('>BBB', 0x01,channel,0x83)
     i2c.writeto(_SLAVE_ADDR,_READ_DS3231)
-
-    segundos=i2c.readfrom_mem(0x68,0,1)
-    minutos=i2c.readfrom_mem(0x68,1,1)
-    horas=i2c.readfrom_mem(0x68,2,1)
-    dia=i2c.readfrom_mem(0x68,4,1)
-    mes=i2c.readfrom_mem(0x68,5,1)
-    ann=i2c.readfrom_mem(0x68,6,1)
-
-    segundosint= code_ds1307(segundos)
-    minutosint=code_ds1307(minutos)
-    horasint=code_ds1307(horas)
-    diaint=code_ds1307(dia)
-    mesint=code_ds1307(mes)
-    annint=code_ds1307(ann)
-
-    print(annint,mesint,diaint,horasint,minutosint,segundosint)
+    fechaPrueba = i2c.readfrom_mem(0x68,0,7)    #lee 7 registros desde el 0x00
+    fechaVec = []
+    for i in range(len(fechaPrueba)):
+        valor1= fechaPrueba[i] & 15
+        valor2= fechaPrueba[i] >> 4
+        fechaVec.append(int(str(valor2)+str(valor1)))
+    fechaVec[6]=fechaVec[6]+2000
+    print(fechaVec[6],fechaVec[5],fechaVec[4],fechaVec[2],fechaVec[1],fechaVec[0])
     i2c.deinit()
 
 def temperature_DS3231():
     i2c.init()
     i2c.writeto(_SLAVE_ADDR,_READ_DS3231)
-
-    TEM1=i2c.readfrom_mem(_SLAVE_ADDR,_REG_TEMP_LSB,1)
-    TEM2=i2c.readfrom_mem(_SLAVE_ADDR,_REG_TEMP_MSB,1)
-    print('temperature_DS3231:',bin(ord(TEM1)),bin(ord(TEM2)))
-
+    TEM1=i2c.readfrom_mem(_SLAVE_ADDR,_REG_TEMP_MSB,1)  #11h
+    TEM2=i2c.readfrom_mem(_SLAVE_ADDR,_REG_TEMP_LSB,1)  #12h
+    #print('temperature_DS3231:',bin(ord(TEM1)),bin(ord(TEM2)))
+    TEM1 = (int(ord(TEM1))) << 2
+    TEM2 = (int(ord(TEM2))) >> 6
+    TEMP = TEM1 | TEM2
+    if TEMP >> 9:
+        print('negativo')
+    else:
+        print('TEMP:',TEMP*0.25)
     i2c.deinit()
-'''
-#dato=00011001---01000000
-dato=0x19
-dato2=0x40
-dato=chr(dato)
-dato2=chr(dato2)
-dato=hex(ord(dato))
-dato=int(dato,0)
-
-dato2=hex(ord(dato2))
-dato2=int(dato2,0)
-
-msb=bin(dato << 2)
-lsb=bin(dato2 >> 6)
-
-#print(dato,bin(dato << 2),bin(dato2>>6))
-print(msb,lsb)
-
-tempe=int(msb,2) | int(lsb,2)
-
-print('tempe',tempe*0.25)
-
-print('hello')
-print(bin(int(msb,2)) or bin(int(lsb,2)))
-print(100 or 1)
-print(101*.25)
-'''
-
 
 def sinc_RTC_ds1307():
     i2c.init()
@@ -148,7 +124,7 @@ def sinc_RTC_ds1307():
     annint=code_ds1307(ann)+2000
     rtc.init((annint, mesint, diaint, horasint, minutosint, segundosint, 0, 0),source=RTC.INTERNAL_RC)
     i2c.deinit()
-    print('RTC-->LoPy',rtc.now())
+    print('RTC3231-->LoPy',rtc.now())
 ##############################################################################
 
 def clockSynchronization(dateTime):
@@ -162,11 +138,147 @@ dateTime=time.gmtime(int(date[1:]))
 clockSynchronization(dateTime)
 ds1307init_sinc()
 '''
+###########################----calibrationType----##############################
+#Llamado desde el method:wifi, redirecciona a los métodos:
+    #h0Calibration:             Calibra P1
+    #h1Calibration:             Calibra P2
+    #clockSynchronizationApp:   Sincroniza el reloj del LoPy con la app.
+    #restoreConfigFile:         Elimina el config generado por la app.
+    #levelWaterUpdate:          Envía a la app nos niveles de agua
+    #finishCalibration:         Finaliza la conexión con la app.
+def calibrationType(argCalibration):
+    print('argCalibration: ', argCalibration[0])
+    switcher = {
+        97: h0Calibration,
+        98: h1Calibration,
+        99: finishCalibration,
+        100: clockSynchronizationApp,
+        101:restoreConfigFile,
+        102:levelWaterUpdate,
+        103:Files,
+        104:downloadFiles,
+    }
+    func = switcher.get(argCalibration[0])       # Get the function from switcher dictionary
+    return func(argCalibration)                  # Execute the function
+#############################----h0Calibration----##############################
+#almacena el valor de P1: P1(vMin,0).
+def h0Calibration(none):
+    ads1115Write(_CHANNEL0)
+    vMin=ads1115Read()
+    p1=ustruct.pack('HH',vMin,0)
+    writeFile(pathConfigFile,'wb',2,p1)
+    msg='Calibración de P1 realizada con éxito'
+    return True, msg
+##############################----h1Calibration----#############################
+#almacena el valor de P2: P2(Vx,hx)
+def h1Calibration(hx):
+    ads1115Write(_CHANNEL0)
+    v1=ads1115Read()
+    p1=readFile(pathConfigFile,'rb',2) #tupla binaria con p1
+    p1=ustruct.unpack('HH',p1)
+    config=ustruct.pack('HHHH',p1[0],p1[1],v1,int(hx[1:]))
+    writeFile(pathConfigFile,'wb',2,config)
+    msg='Calibración de P2 realizada con éxito'
+    return True,msg
+#########################----clockSynchronizationApp----########################
+def clockSynchronizationApp(date):
+    dateTime=time.gmtime(int(date[1:]))
+    msg='Fecha Actualizada'
+    clockSynchronization(dateTime)
+    ds1307init_sinc()
+    return True,msg
+############################----restoreConfigFile----###########################
+def restoreConfigFile(none):
+    if len(os.listdir('/flash/configFile'))==1:
+        msg='Actualmente se ejecuta con la configuración de Fabrica'
+    else:
+        os.remove(pathConfigFile+'2')
+        msg='Restaurado a configuración de Fabrica'
+    return True,msg
+#############################----levelWaterUpdate----###########################
+def levelWaterUpdate(none):
+    ads1115Write(_CHANNEL0)
+    vX=ads1115Read()
+    config=configFile()
+    equationParameters=slope(config)
+    hX=waterLevel(equationParameters,vX)
+    print(hX)
+    tStamp=rtc.now()
+    print(tStamp[:6])
+    tStamp=str(tStamp[0])+'-'+str(tStamp[1])+'-'+str(tStamp[2])+'*'+str(tStamp[3])+':'+str(tStamp[4])+':'+str(tStamp[5])
+    msg=str(hX)
+    msg=msg+'[mm]*'+tStamp
+    return True,msg
+
+##############################----Files----#############################
+def Files(pathLogs):
+    pathLogs=str(pathLogs[1:])
+    logsStore=os.listdir(pathLogs[2:len(pathLogs)-1])
+    i=0
+    msg=''
+    for i in range(i,len(logsStore)):
+        msg=msg+logsStore[i]+'!'
+        i+=1
+    msg=str(msg)
+    return True,msg
+
+##############################----downloadFiles----#############################
+def downloadFiles(numFile):
+    numFile=int(numFile[1:])
+    print('Listo para descarga de archivos')
+    print(numFile, os.listdir('logsDir'), os.listdir('logsDir')[numFile])
+
+    dFile=readFile('logsDir/','rb',(os.listdir('logsDir')[numFile]))
+    print(dFile)
+
+    msg=dFile
+    return True,msg
+
+############################----finishCalibration----###########################
+def finishCalibration(none):
+    msg='Finish wifi LoPy'
+    pycom.rgbled(False)
+    return False,msg
+
+##################################----WiFi----##################################
+#Activa el WiFi ssid:waterLevel, clave: ucuenca1234.
+#Parámetros del socket con ipServer:"host" y puerto:"port" (definidos al inicio)
+#luego del proceso de calibración se desactiva el wifi.
+def wifi():
+    print('wifi init')
+    pycom.rgbled(0x009999) # blue
+    wlan = WLAN(mode=WLAN.AP, ssid='waterLevel', auth=(WLAN.WPA2,'ucuenca1234'), channel=7, antenna=WLAN.INT_ANT)
+    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        serversocket.bind(socket.getaddrinfo(host,port)[0][-1])     #ipServer 192.168.4.1
+    except Exception as e:
+        print('bind failed, error code: ',str(e[0]))
+        sys.exit()
+    serversocket.listen(1)
+    print('socket is now listening over port: ', port)
+
+    wifiSocket=True
+    while (wifiSocket):
+        print('socket init')
+        sc, addr = serversocket.accept()
+        print('sc: ',sc,' addr: ',addr)
+        recibido = sc.recv(16)
+        print('valor recibido :', recibido)
+        print('dato[0]: ',recibido[0])
+        wifiSocket, msg=calibrationType(recibido)
+        sc.send(msg)
+    print('closing wifi and socket')
+    sc.close()
+    serversocket.close()
+    wlan.deinit()
+
+#rtc = RTC()
+#wifi()
+
 
 
 while True:
     #print(rtc.now())
-    print(_SLAVE_ADDR)
     obtener_ds1307()
-    temperature_DS3231()
-    time.sleep(2)
+    #temperature_DS3231()
+    time.sleep(5)

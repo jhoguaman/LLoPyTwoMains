@@ -8,4 +8,4 @@ wlan.deinit()
 uart = UART(0, baudrate=115200)
 os.dupterm(uart)
 
-machine.main('prueba.py')
+machine.main('main.py')
