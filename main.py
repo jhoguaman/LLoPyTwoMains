@@ -2,6 +2,7 @@ import pycom
 import time
 from network import WLAN
 from machine import I2C, RTC
+import ustruct
 import pycom
 import socket
 import sys
@@ -11,6 +12,7 @@ pycom.heartbeat(False)
 host=''
 port=80
 
+#ec.pool.ntp.org (3)
 '''
 pycom.heartbeat(False)
 for cycles in range(0): # stop after 10 cycles
@@ -26,7 +28,7 @@ i2c = I2C(0)                         # create on bus 0
 i2c = I2C(0, I2C.MASTER)             # create and init as a master
 i2c.init(I2C.MASTER, baudrate=100000) # init as a master
 
-_SLAVE_ADDR=const(0x68)
+_ADDR_DS3231=const(0x68)
 _READ_DS3231=const(0x01)
 _WRITE_DS3231=const(0x00)
 _REG_CONTROL=const(0x0E)
@@ -35,23 +37,20 @@ _REG_STATUS=const(0x0F)
 _REG_TEMP_MSB=const(0x11)
 _REG_TEMP_LSB=const(0x12)
 
-
-
-
 #################################--RTC-DS1307--#################################
 def ds1307init_sinc():
     reloj_rtc_int=rtc.now()
-
+    date = []
+    for i in range(0, 6):
+        if i==0:
+            date.append(decode_ds1307(reloj_rtc_int[i]%100))
+        else:
+            date.append(decode_ds1307(reloj_rtc_int[i]))
+    date = ustruct.pack('>'+'B'*8, 0x00,date[5],date[4],date[3],0x00,date[2],date[1],date[0])
     i2c.init()
-    i2c.writeto(0x68,chr(0xD0))
-    i2c.writeto(0x68,chr(0))
-    i2c.writeto_mem(0x68,0,chr(int(decode_ds1307(str(reloj_rtc_int[5])))))
-    i2c.writeto_mem(0x68,1,chr(int(decode_ds1307(str(reloj_rtc_int[4])))))
-    i2c.writeto_mem(0x68,2,chr(int(decode_ds1307(str(reloj_rtc_int[3])))))
-    i2c.writeto_mem(0x68,4,chr(int(decode_ds1307(str(reloj_rtc_int[2])))))
-    i2c.writeto_mem(0x68,5,chr(int(decode_ds1307(str(reloj_rtc_int[1])))))
-    i2c.writeto_mem(0x68,6,chr(int(decode_ds1307(str(reloj_rtc_int[0])[2:4]))))
-    i2c.writeto_mem(0x68,_REG_CONTROL,0x00)
+    i2c.writeto(_ADDR_DS3231,_WRITE_DS3231)
+    i2c.writeto(_ADDR_DS3231, date)
+    i2c.writeto_mem(_ADDR_DS3231,_REG_CONTROL,0x00)
     i2c.deinit()
 
 def decode_ds1307(valor_rtc_int):
@@ -69,18 +68,18 @@ def decode_ds1307(valor_rtc_int):
             x = q
     valorhex = int(binstring, 2)
     return valorhex
-
+'''
 def code_ds1307(valor_ds1307):
     valor=hex(ord(valor_ds1307))
     valor1= int(valor) & 15
     valor2= int(valor)>>4
     valorint= int(str(valor2)+str(valor1))
     return valorint
-
+'''
 def obtener_ds1307():
     i2c.init()
-    i2c.writeto(_SLAVE_ADDR,_READ_DS3231)
-    fechaPrueba = i2c.readfrom_mem(0x68,0,7)    #lee 7 registros desde el 0x00
+    i2c.writeto(_ADDR_DS3231,_READ_DS3231)
+    fechaPrueba = i2c.readfrom_mem(_ADDR_DS3231,0,7)    #lee 7 registros desde el 0x00 al 0x06
     fechaVec = []
     for i in range(len(fechaPrueba)):
         valor1= fechaPrueba[i] & 15
@@ -89,13 +88,13 @@ def obtener_ds1307():
     fechaVec[6]=fechaVec[6]+2000
     print(fechaVec[6],fechaVec[5],fechaVec[4],fechaVec[2],fechaVec[1],fechaVec[0])
     i2c.deinit()
+    return fechaVec
 
 def temperature_DS3231():
     i2c.init()
-    i2c.writeto(_SLAVE_ADDR,_READ_DS3231)
-    TEM1=i2c.readfrom_mem(_SLAVE_ADDR,_REG_TEMP_MSB,1)  #11h
-    TEM2=i2c.readfrom_mem(_SLAVE_ADDR,_REG_TEMP_LSB,1)  #12h
-    #print('temperature_DS3231:',bin(ord(TEM1)),bin(ord(TEM2)))
+    i2c.writeto(_ADDR_DS3231,_READ_DS3231)
+    TEM1=i2c.readfrom_mem(_ADDR_DS3231,_REG_TEMP_MSB,1)  #11h
+    TEM2=i2c.readfrom_mem(_ADDR_DS3231,_REG_TEMP_LSB,1)  #12h
     TEM1 = (int(ord(TEM1))) << 2
     TEM2 = (int(ord(TEM2))) >> 6
     TEMP = TEM1 | TEM2
@@ -106,38 +105,15 @@ def temperature_DS3231():
     i2c.deinit()
 
 def sinc_RTC_ds1307():
-    i2c.init()
-    i2c.writeto(0x68,chr(0xD0))
-    i2c.writeto(0x68,chr(0))
-    i2c.writeto(0x68,chr(0xD1))
-    segundos=i2c.readfrom_mem(0x68,0,1)
-    segundosint= code_ds1307(segundos)
-    minutos=i2c.readfrom_mem(0x68,1,1)
-    minutosint=code_ds1307(minutos)
-    horas=i2c.readfrom_mem(0x68,2,1)
-    horasint=code_ds1307(horas)
-    dia=i2c.readfrom_mem(0x68,4,1)
-    diaint=code_ds1307(dia)
-    mes=i2c.readfrom_mem(0x68,5,1)
-    mesint=code_ds1307(mes)
-    ann=i2c.readfrom_mem(0x68,6,1)
-    annint=code_ds1307(ann)+2000
-    rtc.init((annint, mesint, diaint, horasint, minutosint, segundosint, 0, 0),source=RTC.INTERNAL_RC)
-    i2c.deinit()
-    print('RTC3231-->LoPy',rtc.now())
+    fechaVec=obtener_ds1307()
+    rtc.init((fechaVec[6],fechaVec[5],fechaVec[4],fechaVec[2],fechaVec[1],fechaVec[0], 0, 0),source=RTC.INTERNAL_RC)
+    print('RTC3231 to LoPy',rtc.now())
 ##############################################################################
 
 def clockSynchronization(dateTime):
     rtc.init(dateTime,source=RTC.INTERNAL_RC)
     print(rtc.now())
 
-'''
-rtc = RTC()
-date='a1529668546'
-dateTime=time.gmtime(int(date[1:]))
-clockSynchronization(dateTime)
-ds1307init_sinc()
-'''
 ###########################----calibrationType----##############################
 #Llamado desde el method:wifi, redirecciona a los métodos:
     #h0Calibration:             Calibra P1
@@ -272,13 +248,20 @@ def wifi():
     serversocket.close()
     wlan.deinit()
 
-#rtc = RTC()
+'''
+rtc = RTC()
+date='a1521567462'
+dateTime=time.gmtime(int(date[1:]))
+clockSynchronization(dateTime)
+ds1307init_sinc()
+'''
+
 #wifi()
 
-
-
+#sinc_RTC_ds1307()
+#ds1307init_sinc()
 while True:
     #print(rtc.now())
     obtener_ds1307()
     #temperature_DS3231()
-    time.sleep(5)
+    time.sleep(1)

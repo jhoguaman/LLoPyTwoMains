@@ -74,3 +74,24 @@ print(a[1])
 #Returns False
 #for i in range(8):
 #    print((b'a'[0] >> i) & 1)
+
+print ("Introduce el número: ")
+numero = 2018
+
+umil = numero / 1000
+tmp = numero % 1000
+tmp1 = numero % 1000
+centenas = tmp / 100
+tmp = tmp % 100
+
+decenas = tmp / 10
+unidades = tmp % 10
+
+print ("Unidades de millar: %i" % umil, (numero) % 100 )
+
+tupla=(2018, 3, 20, 17, 37, 42, 82, None)
+date = []
+for i in range(1, 6):
+    date.append(tupla[i])
+
+print(date)
